@@ -2,15 +2,12 @@ import json
 
 from util.route import route
 from util.log import logger
-
-import openai
 import tornado.web
 import os
 import requests
 import traceback
 
-openai.api_key = os.environ.get("API_KEY")
-dd_token = os.environ.get("DD_TOKEN")
+dd_token = 'a3107af12595f8d0c0652a4b38b3a032c485e1699b089bebe272e82d949aa3d2'
 
 # Set up the model and prompt
 model_engine = "gpt-3.5-turbo"
@@ -31,39 +28,52 @@ class ChatgptHandler(tornado.web.RequestHandler):
             request_data = self.request.body
             data = json.loads(request_data)
             prompt = data['text']['content']
-            if "/clear" in prompt:
-                self.clear_context(data)
-                self.notify_dingding('已清空上下文')
-                return self.write_json({"ret": 200})
 
-            for i in range(retry_times):
-                try:
-                    context = self.get_context(data)
-                    new_context = [
-                        {"role": "user", "content": prompt}]
-                    completion = openai.ChatCompletion.create(
-                        model=model_engine,
-                        messages=context + new_context,
-                    )
-                    response = completion.choices[0].message.content
-                    usage = completion.usage
-                    break
-                except:
-                    traceback.print_exc()
-                    logger.info(f"failed, retry")
-                    continue
+            if "/image" in prompt:
+                content = prompt.split(" ")[1]
+                response = self.submit(content)
 
-            logger.info(f"parse response: {response}")
-            self.set_context(data, response)
-            self.notify_dingding(
-                response + '\n' + '-=-=-=-=-=-=-=-=-=' + '\n' + '本次对话 Tokens 用量 [' + str(usage.total_tokens) + '/4096]')
-            if (usage.total_tokens >= 4096):
-                self.clear_context(data)
-                self.notify_dingding('超出 Tokens 限制，清空上下文')
+                logger.info(f"parse response: {response}")
+                # 存储用户-请求对应的数据
+                self.set_context(data, response)
+                self.notify_dingding(f"任务id:{response['result']},已完成0%，请等待")
+
+            if "/check" in prompt:
+                ctx = self.get_context(data)
+                taskid = ctx['result']
+                resp = self.check(taskid)
+                status = resp['status']
+                imgurl = resp['imageUrl']
+                progress = resp['progress']
+
+                if status != "SUCCESS":
+                    self.notify_dingding(f"任务id:{taskid}g了，原因未知")
+                elif progress != '100%':
+                    self.notify_dingding(f"任务id:{taskid},已完成{progress}，请等待")
+                else:
+                    self.notify_dingding(f"图片链接：{imgurl}")
+
             return self.write_json({"ret": 200})
         except:
             traceback.print_exc()
             return self.write_json({"ret": 500})
+
+    def submit(self, prompt):
+        # 调用 imagine 函数并传递参数
+        params = {
+            'base64Array': [],
+            'notifyHook': '',
+            'prompt': prompt,
+            'state': ''
+        }
+        url = 'https://midjproxyt.zeabur.app/mj/submit/imagine'
+        response = requests.post(url, json=params)
+        return response
+
+    def check(self, id):
+        url = f'https://midjproxyt.zeabur.app/mj/task/{id}/fetch'
+        response = requests.get(url)
+        return response
 
     def get_context(self, data):
         storeKey = self.get_context_key(data)
