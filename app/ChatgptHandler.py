@@ -31,7 +31,7 @@ class ChatgptHandler(tornado.web.RequestHandler):
 
             if "/image" in prompt:
                 content = prompt.split(" ")[1]
-                response = self.submit(content)
+                response = json.loads(self.submit(content).text)
 
                 logger.info(f"parse response: {response}")
                 # 存储用户-请求对应的数据
@@ -41,7 +41,7 @@ class ChatgptHandler(tornado.web.RequestHandler):
             if "/check" in prompt:
                 ctx = self.get_context(data)
                 taskid = ctx['result']
-                resp = self.check(taskid)
+                resp = json.loads(self.check(taskid).text)
                 status = resp['status']
                 imgurl = resp['imageUrl']
                 progress = resp['progress']
@@ -104,6 +104,7 @@ class ChatgptHandler(tornado.web.RequestHandler):
         self.write(tornado.escape.json_encode(struct))
 
     def notify_dingding(self, answer):
+        answer = "/image " + answer
         data = {
             "msgtype": "text",
             "text": {
