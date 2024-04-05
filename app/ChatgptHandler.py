@@ -1,4 +1,5 @@
 import json
+import time
 
 from util.route import route
 from util.log import logger
@@ -29,8 +30,32 @@ class ChatgptHandler(tornado.web.RequestHandler):
             data = json.loads(request_data)
             prompt = data['text']['content']
 
+            if "/syncImage" in prompt:
+                content = " ".join(prompt.split(" ")[1:])
+                response = json.loads(self.submit(content).text)
+                logger.info(f"parse response: {response}")
+                # 存储用户-请求对应的数据
+                self.set_context(data, response)
+                self.notify_dingding(f"任务id:{response['result']},已完成0%，请等待")
+                taskid = response['result']
+                while True:
+                    resp = json.loads(self.check(taskid).text)
+                    status = resp['status']
+                    imgurl = resp['imageUrl']
+                    progress = resp['progress']
+
+                    if status == "FAILED":
+                        self.notify_dingding(f"任务id:{taskid}g了，原因未知")
+                        break
+                    elif progress != '100%':
+                        self.notify_dingding(f"任务id:{taskid},已完成{progress}，请等待")
+                    else:
+                        self.notify_dingding(f"任务id:{taskid},图片链接：{imgurl}")
+                        break
+                    time.sleep(10)
+
             if "/image" in prompt:
-                content = prompt.split(" ")[1]
+                content = prompt.split(" ")[1:]
                 response = json.loads(self.submit(content).text)
 
                 logger.info(f"parse response: {response}")
@@ -51,7 +76,7 @@ class ChatgptHandler(tornado.web.RequestHandler):
                 elif progress != '100%':
                     self.notify_dingding(f"任务id:{taskid},已完成{progress}，请等待")
                 else:
-                    self.notify_dingding(f"图片链接：{imgurl}")
+                    self.notify_dingding(f"任务id:{taskid},图片链接：{imgurl}")
 
             return self.write_json({"ret": 200})
         except:
