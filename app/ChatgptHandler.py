@@ -40,7 +40,7 @@ class ChatgptHandler(tornado.web.RequestHandler):
 
             if "/check" in prompt:
                 ctx = self.get_context(data)
-                taskid = ctx['result']
+                taskid = ctx[-1]['content']['result']
                 resp = json.loads(self.check(taskid).text)
                 status = resp['status']
                 imgurl = resp['imageUrl']
