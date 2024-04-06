@@ -13,7 +13,7 @@ dd_token = 'a3107af12595f8d0c0652a4b38b3a032c485e1699b089bebe272e82d949aa3d2'
 # Set up the model and prompt
 model_engine = "gpt-3.5-turbo"
 
-retry_times = 5
+retry_times = 10
 
 global_dict = {}
 
@@ -38,7 +38,9 @@ class ChatgptHandler(tornado.web.RequestHandler):
                 self.set_context(data, response)
                 self.notify_dingding(f"任务id:{response['result']},已完成0%，请等待")
                 taskid = response['result']
-                while True:
+                i = 0
+                while i < retry_times:
+                    time.sleep(20)
                     resp = json.loads(self.check(taskid).text)
                     status = resp['status']
                     imgurl = resp['imageUrl']
@@ -48,11 +50,13 @@ class ChatgptHandler(tornado.web.RequestHandler):
                         self.notify_dingding(f"任务id:{taskid}g了，原因未知")
                         break
                     elif progress != '100%':
+                        i += 1
                         self.notify_dingding(f"任务id:{taskid},已完成{progress}，请等待")
                     else:
-                        self.notify_dingding(f"任务id:{taskid},图片链接：{imgurl}")
+                        localurl = self.download_save_image(imgurl)
+                        self.notify_dingding(f"任务id:{taskid},图片链接：{localurl}")
                         break
-                    time.sleep(10)
+
 
             if "/image" in prompt:
                 content = prompt.split(" ")[1:]
@@ -71,12 +75,13 @@ class ChatgptHandler(tornado.web.RequestHandler):
                 imgurl = resp['imageUrl']
                 progress = resp['progress']
 
-                if status != "SUCCESS":
+                if status == "FAILED":
                     self.notify_dingding(f"任务id:{taskid}g了，原因未知")
                 elif progress != '100%':
                     self.notify_dingding(f"任务id:{taskid},已完成{progress}，请等待")
                 else:
-                    self.notify_dingding(f"任务id:{taskid},图片链接：{imgurl}")
+                    localurl = self.download_save_image(imgurl)
+                    self.notify_dingding(f"任务id:{taskid},图片链接：{localurl}")
 
             return self.write_json({"ret": 200})
         except:
@@ -99,6 +104,23 @@ class ChatgptHandler(tornado.web.RequestHandler):
         url = f'https://midjproxyt.zeabur.app/mj/task/{id}/fetch'
         response = requests.get(url)
         return response
+
+    def download_save_image(self, url):
+        # 发送GET请求获取图片数据
+        response = requests.get(url)
+        name = url.split("/")[-1]
+        # 检查响应状态码是否成功
+        if response.status_code == 200:
+            # 打开文件并写入图片数据
+            path = os.path.join("../images", name)
+            if os.path.exists(path):
+                return "listener.zeabur.app/images/" + name
+            with open(path, 'wb') as file:
+                file.write(response.content)
+            logger.info(f"图片已成功下载并保存为: {name}")
+        else:
+            logger.info("图片下载失败")
+        return "listener.zeabur.app/images/" + name
 
     def get_context(self, data):
         storeKey = self.get_context_key(data)
